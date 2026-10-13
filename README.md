@@ -61,7 +61,7 @@ Optional:
 Set `PIA_REGIONS` to a comma-separated list, preferred region first:
 
 ```
-PIA_REGIONS=mexico,swiss,us_chicago
+PIA_REGIONS=mexico,swiss
 ```
 
 The first region is used normally. If a recovery (new config + Gluetun restart) does not bring the tunnel up, the watchdog tries again; after `REGION_SWITCH_AFTER` such attempts in a row (default `2`) it moves to the next region, wrapping around at the end. This covers the case where a whole PIA region goes bad: regenerating inside a dead region only picks another dead server.
