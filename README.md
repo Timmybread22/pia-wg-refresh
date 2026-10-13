@@ -1,5 +1,9 @@
 # pia-wg-refresh
 
+> **This is a fork.** It is [Timmybread22's](https://github.com/Timmybread22) fork of [ccarpinteri/pia-wg-refresh](https://github.com/ccarpinteri/pia-wg-refresh), which bundles [ccarpinteri/pia-wg-config](https://github.com/ccarpinteri/pia-wg-config), itself a fork of [Ephemeral-Dust/pia-wg-config](https://github.com/Ephemeral-Dust/pia-wg-config), which is a fork of Kyle Lucas's original [kylegrantlucas/pia-wg-config](https://github.com/kylegrantlucas/pia-wg-config). See [Credits](#credits).
+>
+> **What this fork changes:** the Docker image pins `docker compose` to 5.1.3 (static binary) and `pia-wg-config` to v1.5.0. The upstream image uses Alpine 3.20's compose 2.27.0, which computes different service config hashes than a modern host `docker compose`. If Gluetun has `depends_on: pia-wg-refresh`, the watchdog's `docker compose up -d gluetun` then recreates the watchdog itself and kills the recovery job midway (exit 137), leaving Gluetun removed and not restarted. Matching the host's compose version avoids that. If your host runs a different compose version, change `COMPOSE_VERSION` in the Dockerfile.
+
 Automatically refreshes Private Internet Access (PIA) WireGuard configs for Gluetun only when the tunnel is actually down. It runs alongside Gluetun in Docker, regenerates `wg0.conf` with a bundled `pia-wg-config` binary built from source, and restarts the Gluetun container only after consecutive failures.
 
 This project bundles a forked [pia-wg-config](https://github.com/ccarpinteri/pia-wg-config) binary (originally by Kyle Lucas, forked via Ephemeral-Dust), which generates WireGuard configurations for PIA. It is the tool [recommended by the Gluetun documentation](https://github.com/qdm12/gluetun-wiki/blob/main/setup/providers/private-internet-access.md#wireguard) for PIA WireGuard setups. The fork adds support for server name output, port-forwarding server filtering, and fixes token generation on PIA's newer server format.
@@ -311,6 +315,17 @@ Run `make test-bundled` or `make test-download` to exercise a single path.
 ## Build args
 
 - `PIA_WG_CONFIG_REF` (default: `main`) sets the git ref used to build `pia-wg-config` in the Dockerfile.
+
+## Credits
+
+This project stands on other people's work:
+
+- **[Charlie Carpinteri (ccarpinteri)](https://github.com/ccarpinteri)** wrote `pia-wg-refresh`, the watchdog this repo is forked from, and maintains the `pia-wg-config` fork it bundles.
+- **[Ephemeral-Dust](https://github.com/Ephemeral-Dust/pia-wg-config)** maintained the intermediate `pia-wg-config` fork.
+- **[Kyle Lucas (kylegrantlucas)](https://github.com/kylegrantlucas/pia-wg-config)** wrote the original `pia-wg-config`.
+- **[qdm12/gluetun](https://github.com/qdm12/gluetun)** is the VPN client container this monitors.
+
+Everything is used under the MIT license (see below). Thank you to the original authors.
 
 ## License
 
