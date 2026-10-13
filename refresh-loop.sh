@@ -406,7 +406,10 @@ restart_gluetun() {
       fi
 
       # Use raw docker commands to avoid docker compose dependency issues
-      # (gluetun's depends_on pia-wg-refresh causes compose to recreate wrong container)
+      # (gluetun's depends_on pia-wg-refresh causes compose to recreate wrong container).
+      # The compose up calls below also pass --no-deps for the same reason: without it,
+      # compose pulls pia-wg-refresh in as a dependency and, if its config hash differs
+      # from this container's (e.g. a different compose version), recreates and kills us.
       log debug "Stopping container: $GLUETUN_CONTAINER"
       if docker_output=$(docker stop "$GLUETUN_CONTAINER" 2>&1); then
         echo "$docker_output" >> "$DOCKER_LOG"
@@ -426,8 +429,8 @@ restart_gluetun() {
       fi
 
       # Recreate using docker compose (reads updated .env file)
-      log debug "Running: docker compose -p \"$project\" --project-directory \"$DOCKER_COMPOSE_HOST_DIR\" up -d \"$GLUETUN_CONTAINER\" (timeout: ${COMPOSE_UP_TIMEOUT}s)"
-      if ! docker_output=$(timeout "$COMPOSE_UP_TIMEOUT" docker compose -p "$project" --project-directory "$DOCKER_COMPOSE_HOST_DIR" up -d "$GLUETUN_CONTAINER" 2>&1); then
+      log debug "Running: docker compose -p \"$project\" --project-directory \"$DOCKER_COMPOSE_HOST_DIR\" up -d --no-deps \"$GLUETUN_CONTAINER\" (timeout: ${COMPOSE_UP_TIMEOUT}s)"
+      if ! docker_output=$(timeout "$COMPOSE_UP_TIMEOUT" docker compose -p "$project" --project-directory "$DOCKER_COMPOSE_HOST_DIR" up -d --no-deps "$GLUETUN_CONTAINER" 2>&1); then
         compose_exit_code=$?
         echo "$docker_output" >> "$DOCKER_LOG"
         if [ "$compose_exit_code" -eq 124 ]; then
@@ -463,9 +466,20 @@ restart_gluetun() {
           done
         done
 
-        # Recreate all dependent services - compose handles dependency ordering
-        log debug "Running: docker compose -p \"$project\" --project-directory \"$DOCKER_COMPOSE_HOST_DIR\" up -d $dependent_containers (timeout: ${COMPOSE_UP_TIMEOUT}s)"
-        if docker_output=$(timeout "$COMPOSE_UP_TIMEOUT" docker compose -p "$project" --project-directory "$DOCKER_COMPOSE_HOST_DIR" up -d $dependent_containers 2>&1); then
+        # --no-deps stops compose from pulling pia-wg-refresh in via gluetun's depends_on,
+        # but it also skips compose's wait for gluetun to be healthy, so wait here instead.
+        log debug "Waiting for $GLUETUN_CONTAINER to be healthy before starting dependents"
+        waited=0
+        while [ "$waited" -lt "${COMPOSE_UP_TIMEOUT:-120}" ]; do
+          health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$GLUETUN_CONTAINER" 2>/dev/null || true)
+          [ "$health" = "healthy" ] || [ "$health" = "none" ] && break
+          sleep 3
+          waited=$((waited + 3))
+        done
+
+        # Recreate all dependent services
+        log debug "Running: docker compose -p \"$project\" --project-directory \"$DOCKER_COMPOSE_HOST_DIR\" up -d --no-deps $dependent_containers (timeout: ${COMPOSE_UP_TIMEOUT}s)"
+        if docker_output=$(timeout "$COMPOSE_UP_TIMEOUT" docker compose -p "$project" --project-directory "$DOCKER_COMPOSE_HOST_DIR" up -d --no-deps $dependent_containers 2>&1); then
           echo "$docker_output" >> "$DOCKER_LOG"
           log debug "Compose output: $docker_output"
           log info "All dependent containers recreated successfully"
