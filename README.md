@@ -2,7 +2,7 @@
 
 > **This is a fork.** It is [Timmybread22's](https://github.com/Timmybread22) fork of [ccarpinteri/pia-wg-refresh](https://github.com/ccarpinteri/pia-wg-refresh), which bundles [ccarpinteri/pia-wg-config](https://github.com/ccarpinteri/pia-wg-config), itself a fork of [Ephemeral-Dust/pia-wg-config](https://github.com/Ephemeral-Dust/pia-wg-config), which is a fork of Kyle Lucas's original [kylegrantlucas/pia-wg-config](https://github.com/kylegrantlucas/pia-wg-config). See [Credits](#credits).
 >
-> **What this fork changes:** the Docker image pins `docker compose` to 5.1.3 (static binary) and `pia-wg-config` to v1.5.0. The upstream image uses Alpine 3.20's compose 2.27.0, which computes different service config hashes than a modern host `docker compose`. If Gluetun has `depends_on: pia-wg-refresh`, the watchdog's `docker compose up -d gluetun` then recreates the watchdog itself and kills the recovery job midway (exit 137), leaving Gluetun removed and not restarted. Matching the host's compose version avoids that. If your host runs a different compose version, change `COMPOSE_VERSION` in the Dockerfile.
+> **What this fork changes:** (1) multi-region fallback via `PIA_REGIONS` (see [Multiple regions](#multiple-regions-fork-feature)); (2) `docker compose up` is run with `--no-deps` so it can never recreate the watchdog itself; (3) the Docker image pins `docker compose` to 5.1.3 (static binary) and `pia-wg-config` to v1.5.0. The upstream image uses Alpine 3.20's compose 2.27.0, which computes different service config hashes than a modern host `docker compose`. If Gluetun has `depends_on: pia-wg-refresh`, the watchdog's `docker compose up -d gluetun` then recreates the watchdog itself and kills the recovery job midway (exit 137), leaving Gluetun removed and not restarted. Matching the host's compose version avoids that. If your host runs a different compose version, change `COMPOSE_VERSION` in the Dockerfile.
 
 Automatically refreshes Private Internet Access (PIA) WireGuard configs for Gluetun only when the tunnel is actually down. It runs alongside Gluetun in Docker, regenerates `wg0.conf` with a bundled `pia-wg-config` binary built from source, and restarts the Gluetun container only after consecutive failures.
 
@@ -32,7 +32,7 @@ Required:
 
 - `PIA_USERNAME`
 - `PIA_PASSWORD`
-- `PIA_REGION`
+- `PIA_REGION` (or `PIA_REGIONS`, see below)
 
 Optional:
 
@@ -55,6 +55,21 @@ Optional:
 - `PIA_WG_CONFIG_URL` (optional: if set, download/replace `pia-wg-config` on startup)
 - `PIA_WG_CONFIG_SHA256` (optional: verify the download before installing)
 - `SELF_TEST` (optional: set to `1` to exit after startup checks)
+
+## Multiple regions (fork feature)
+
+Set `PIA_REGIONS` to a comma-separated list, preferred region first:
+
+```
+PIA_REGIONS=mexico,swiss,us_chicago
+```
+
+The first region is used normally. If a recovery (new config + Gluetun restart) does not bring the tunnel up, the watchdog tries again; after `REGION_SWITCH_AFTER` such attempts in a row (default `2`) it moves to the next region, wrapping around at the end. This covers the case where a whole PIA region goes bad: regenerating inside a dead region only picks another dead server.
+
+- The active region is saved in `$LOG_DIR/active_region`, so a container restart keeps it.
+- It stays on the working region until that one fails; it does not automatically return to the first region.
+- `PIA_REGION` still works for a single region. If both are set, `PIA_REGIONS` is used for rotation and `PIA_REGION` is the starting default.
+- With port forwarding on, use regions that support it; a region with no port-forwarding servers counts as a failed recovery.
 
 ## Port forwarding
 
