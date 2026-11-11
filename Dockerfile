@@ -2,7 +2,8 @@ FROM ghcr.io/ccarpinteri/pia-wg-config:v1.5.0 AS pia
 
 FROM alpine:3.20
 
-RUN apk add --no-cache ca-certificates docker-cli curl
+# wireguard-tools-wg, iproute2 and jq are for REGION_SELECT=fastest (speedtest.sh, server list parsing)
+RUN apk add --no-cache ca-certificates docker-cli curl jq iproute2 wireguard-tools-wg
 
 # Pin compose to the host's version so config hashes match the host's `docker compose`.
 # Alpine 3.20's docker-cli-compose is 2.27.0, which hashes services differently and made
@@ -23,7 +24,8 @@ RUN chmod +x /usr/local/bin/pia-wg-config
 
 COPY entrypoint.sh /app/entrypoint.sh
 COPY refresh-loop.sh /app/refresh-loop.sh
+COPY speedtest.sh /app/speedtest.sh
 
-RUN chmod +x /app/entrypoint.sh /app/refresh-loop.sh
+RUN chmod +x /app/entrypoint.sh /app/refresh-loop.sh /app/speedtest.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]

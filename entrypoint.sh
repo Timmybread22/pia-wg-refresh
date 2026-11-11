@@ -18,6 +18,12 @@ set -eu
 : "${ON_RECOVERY_SCRIPT:=}"
 : "${PIA_REGIONS:=}"
 : "${REGION_SWITCH_AFTER:=2}"
+: "${REGION_SELECT:=rotate}"
+: "${BENCH_CANDIDATES:=6}"
+: "${BENCH_SECONDS:=8}"
+: "${BENCH_STREAMS:=4}"
+: "${BENCH_IMAGE:=}"
+: "${PIA_SERVERLIST_URL:=https://serverlist.piaservers.net/vpninfo/servers/v6}"
 : "${ON_PORT_CHANGE_SCRIPT:=}"
 : "${COMPOSE_UP_TIMEOUT:=300}"
 
@@ -25,9 +31,12 @@ export GLUETUN_CONTAINER WG_CONF_PATH CHECK_URL CHECK_INTERVAL_SECONDS HEALTHY_C
 export PIA_USERNAME PIA_PASSWORD PIA_REGION PIA_REGIONS REGION_SWITCH_AFTER PIA_PORT_FORWARDING PIA_WG_CONFIG_BIN PIA_WG_CONFIG_URL PIA_WG_CONFIG_SHA256 SELF_TEST
 export DOCKER_COMPOSE_HOST_DIR DOCKER_COMPOSE_ENV_FILE
 export ON_FAILURE_SCRIPT ON_RECOVERY_SCRIPT ON_PORT_CHANGE_SCRIPT COMPOSE_UP_TIMEOUT
+export REGION_SELECT BENCH_CANDIDATES BENCH_SECONDS BENCH_STREAMS BENCH_IMAGE PIA_SERVERLIST_URL
 
 # PIA_REGIONS (comma-separated, preferred first) takes precedence over PIA_REGION.
-if [ -z "${PIA_REGION:-}" ] && [ -n "${PIA_REGIONS:-}" ]; then
+# PIA_REGIONS=auto (REGION_SELECT=fastest only) means "any region"; PIA_REGION is then
+# the fallback region used when no speed test can be run.
+if [ -z "${PIA_REGION:-}" ] && [ -n "${PIA_REGIONS:-}" ] && [ "$PIA_REGIONS" != "auto" ]; then
   PIA_REGION=$(echo "$PIA_REGIONS" | cut -d, -f1 | tr -d ' ')
   export PIA_REGION
 fi

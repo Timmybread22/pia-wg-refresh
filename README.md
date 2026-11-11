@@ -2,7 +2,7 @@
 
 > **This is a fork.** It is [Timmybread22's](https://github.com/Timmybread22) fork of [ccarpinteri/pia-wg-refresh](https://github.com/ccarpinteri/pia-wg-refresh), which bundles [ccarpinteri/pia-wg-config](https://github.com/ccarpinteri/pia-wg-config), itself a fork of [Ephemeral-Dust/pia-wg-config](https://github.com/Ephemeral-Dust/pia-wg-config), which is a fork of Kyle Lucas's original [kylegrantlucas/pia-wg-config](https://github.com/kylegrantlucas/pia-wg-config). See [Credits](#credits).
 >
-> **What this fork changes:** (1) multi-region fallback via `PIA_REGIONS` (see [Multiple regions](#multiple-regions-fork-feature)); (2) `docker compose up` is run with `--no-deps` so it can never recreate the watchdog itself; (3) the Docker image pins `docker compose` to 5.1.3 (static binary) and `pia-wg-config` to v1.5.0. The upstream image uses Alpine 3.20's compose 2.27.0, which computes different service config hashes than a modern host `docker compose`. If Gluetun has `depends_on: pia-wg-refresh`, the watchdog's `docker compose up -d gluetun` then recreates the watchdog itself and kills the recovery job midway (exit 137), leaving Gluetun removed and not restarted. Matching the host's compose version avoids that. If your host runs a different compose version, change `COMPOSE_VERSION` in the Dockerfile.
+> **What this fork changes:** (1) multi-region fallback via `PIA_REGIONS` (see [Multiple regions](#multiple-regions-fork-feature)) and speed-tested server selection via `REGION_SELECT=fastest` (see [Fastest server](#fastest-server-fork-feature)); (2) `docker compose up` is run with `--no-deps` so it can never recreate the watchdog itself; (3) the Docker image pins `docker compose` to 5.1.3 (static binary) and `pia-wg-config` to v1.5.0. The upstream image uses Alpine 3.20's compose 2.27.0, which computes different service config hashes than a modern host `docker compose`. If Gluetun has `depends_on: pia-wg-refresh`, the watchdog's `docker compose up -d gluetun` then recreates the watchdog itself and kills the recovery job midway (exit 137), leaving Gluetun removed and not restarted. Matching the host's compose version avoids that. If your host runs a different compose version, change `COMPOSE_VERSION` in the Dockerfile.
 
 Automatically refreshes Private Internet Access (PIA) WireGuard configs for Gluetun only when the tunnel is actually down. It runs alongside Gluetun in Docker, regenerates `wg0.conf` with a bundled `pia-wg-config` binary built from source, and restarts the Gluetun container only after consecutive failures.
 
@@ -70,6 +70,33 @@ The first region is used normally. If a recovery (new config + Gluetun restart) 
 - It stays on the working region until that one fails; it does not automatically return to the first region.
 - `PIA_REGION` still works for a single region. If both are set, `PIA_REGIONS` is used for rotation and `PIA_REGION` is the starting default.
 - With port forwarding on, use regions that support it; a region with no port-forwarding servers counts as a failed recovery.
+
+## Fastest server (fork feature)
+
+Instead of walking a list, the watchdog can speed-test nearby servers and connect to the fastest one each time it has to recover:
+
+```
+REGION_SELECT=fastest
+PIA_REGIONS=auto        # any region; or a comma-separated list to choose from
+PIA_REGION=ca_toronto   # fallback, used only when no speed test can be run
+```
+
+On a failure (and when no config exists yet) it:
+
+1. Reads PIA's public server list and keeps the online regions (only port-forwarding ones when `PIA_PORT_FORWARDING=true`; only those in `PIA_REGIONS` unless it is `auto`).
+2. Times a TCP connect to each and keeps the `BENCH_CANDIDATES` nearest (default `6`).
+3. For each of those, generates a config and measures download speed through it in a throwaway container (`speedtest.sh`, its own WireGuard tunnel, `BENCH_SECONDS` seconds over `BENCH_STREAMS` connections, defaults `8` and `4`). The live Gluetun tunnel is not involved.
+4. Installs the config of the server that tested fastest and recreates Gluetun.
+
+Notes:
+
+- A recovery takes about two minutes longer than in rotate mode (roughly 13 seconds per candidate).
+- A region picked since the tunnel was last up is skipped on the next attempt, so a server that tests fast but will not hold a tunnel is not chosen twice in a row.
+- The last results are written to `$LOG_DIR/region_speeds`.
+- To pick a new server on demand, create the file `$LOG_DIR/reselect` (`touch reselect` in the logs folder). It is noticed within 15 seconds.
+- The throwaway container is started through the Docker socket with `--cap-add NET_ADMIN`, from the watchdog's own image (override with `BENCH_IMAGE`). The host needs kernel WireGuard, which Gluetun's kernelspace mode already requires.
+- The recovery hook also receives `PIA_ACTIVE_REGION` and `PIA_BENCH_MBPS`.
+- `REGION_SELECT=rotate` (the default) keeps the list behaviour described above. This release also fixes rotate mode moving to the next region after recoveries that had in fact worked.
 
 ## Port forwarding
 
